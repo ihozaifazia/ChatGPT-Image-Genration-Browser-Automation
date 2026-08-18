@@ -1,4 +1,4 @@
-# ChatGPT Image Service 🤖🎨
+﻿# ChatGPT Image Service 🤖🎨
 
 A browser automation microservice that generates images using **ChatGPT's web UI (GPT-Image-2)** and returns the result as binary PNG to **n8n** — no official OpenAI API required.
 
@@ -8,7 +8,7 @@ A browser automation microservice that generates images using **ChatGPT's web UI
 
 ```
 n8n  →  POST /generate { prompt }  →  Playwright automates ChatGPT  →  PNG binary returned to n8n
-                                                                      →  PNG also saved to ./downloads/
+                                                                       →  PNG also saved to ./downloads/
 ```
 
 1. n8n sends a prompt to this service via HTTP
@@ -99,8 +99,7 @@ Returns service status.
   "status": "ok",
   "service": "chatgpt-image-service",
   "busy": false,
-  "queuedRequests": 0,
-  "timestamp": "2025-01-01T12:00:00.000Z"
+  "timestamp": "2026-08-18T12:00:00.000Z"
 }
 ```
 
@@ -129,6 +128,7 @@ A permanent copy of every generated image is also saved to `./downloads/` with a
 | Status | Meaning |
 |--------|---------|
 | `400` | Missing or invalid prompt |
+| `429` | Server is busy generating another image (request rejected) |
 | `500` | Generation failed (see `details` field) |
 | `503` | Not logged in — log in manually in the browser window |
 | `504` | Timed out — ChatGPT was too slow, retry |
@@ -201,7 +201,7 @@ The returned binary data flows directly into downstream n8n nodes (Write Binary 
 
 | Feature | Detail |
 |---------|--------|
-| **Serial queue** | Only one generation runs at a time. Concurrent n8n calls wait in line. |
+| **Single-request mode** | Only 1 generation runs at a time. Concurrent calls are immediately rejected (HTTP 429) rather than queued. |
 | **Auto-retry** | Up to 3 retry attempts per request on failure (configurable via `MAX_RETRIES`) |
 | **Two download strategies** | First tries the UI download button; falls back to fetching the image src directly |
 | **Persistent login** | Dedicated automation profile saves cookies — no re-login needed between requests |
@@ -224,7 +224,7 @@ Browser Automation ChatGPT Image Service/
 ├── scripts/
 │   ├── generateImage.js        # Playwright ChatGPT automation
 │   ├── sessionManager.js       # Singleton browser context manager
-│   └── queue.js                # Serial async request queue
+│   └── queue.js                # Single-task lock / busy rejection
 ├── profiles/
 │   └── chatgpt-automation/     # Dedicated Chrome session (login cookies saved here)
 └── downloads/                  # Permanent image archive (YYYY-MM-DD_HH-MM-SS.png)
@@ -247,7 +247,7 @@ Browser Automation ChatGPT Image Service/
    ```
 6. Configure your firewall to allow n8n to reach port 3000
 
-> ⚠️ On Oracle Linux (headless server), set `HEADLESS=true` in `.env` and use **Xvfb** as a virtual display so Chrome can run without a monitor.
+> 💡 On Oracle Linux (headless server), set `HEADLESS=true` in `.env` and use **Xvfb** as a virtual display so Chrome can run without a monitor.
 
 ---
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * server.js
  *
  * Express HTTP server — the bridge between n8n and the ChatGPT browser bot.
@@ -6,6 +6,11 @@
  * Endpoints:
  *   GET  /health    → status check (is server alive? is it busy?)
  *   POST /generate  → accepts { prompt } → returns image/png binary
+ *   GET  /lastimage → returns the most recently generated image
+ *
+ * Concurrency:
+ *   Handles only 1 request at a time. If a request arrives while working,
+ *   it immediately returns 429 Too Many Requests (busy).
  *
  * Usage:
  *   npm start
@@ -40,14 +45,13 @@ app.use((req, res, next) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /health
-// Used by n8n (or monitoring tools) to check if the service is up.
+// Used by n8n (or monitoring tools) to check if the service is up & available.
 // ─────────────────────────────────────────────────────────────────────────────
 app.get("/health", (req, res) => {
   res.json({
-    status: "ok",
+    status: queue.isBusy ? "busy" : "ok",
     service: "chatgpt-image-service",
     busy: queue.isBusy,
-    queuedRequests: queue.pendingCount,
     timestamp: new Date().toISOString(),
   });
 });
@@ -56,8 +60,18 @@ app.get("/health", (req, res) => {
 // POST /generate
 // n8n sends: { "prompt": "your image description here" }
 // Returns:   image binary (Content-Type: image/png)
+// Rejects:   429 if another generation is already in progress
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/generate", async (req, res) => {
+  // ── Concurrency check: Reject if already processing a request ──
+  if (queue.isBusy) {
+    console.warn("[Server] /generate rejected: service is currently busy with another request.");
+    return res.status(429).json({
+      error: "Service is busy processing another request. Please try again later.",
+      status: "busy",
+    });
+  }
+
   const { prompt } = req.body;
 
   // ── Validation ──
@@ -75,14 +89,14 @@ app.post("/generate", async (req, res) => {
   }
 
   const trimmedPrompt = prompt.trim();
-  console.log(`[Server] /generate request received. Queue size: ${queue.pendingCount}`);
+  console.log("[Server] /generate request accepted.");
   console.log(`[Server] Prompt (${trimmedPrompt.length} chars):`, trimmedPrompt.substring(0, 100) + (trimmedPrompt.length > 100 ? "..." : ""));
 
-  // ── Queue the task ──
+  // ── Execute task ──
   try {
     const imageBuffer = await queue.enqueue(
       () => generateImage(trimmedPrompt),
-      REQUEST_TIMEOUT_MS + 30000 // queue timeout is slightly longer than generation timeout
+      REQUEST_TIMEOUT_MS + 30000
     );
 
     // Return image binary directly
@@ -98,6 +112,13 @@ app.post("/generate", async (req, res) => {
 
   } catch (err) {
     console.error("[Server] /generate failed:", err.message);
+
+    if (err.message === "SERVICE_BUSY" || err.code === "SERVICE_BUSY") {
+      return res.status(429).json({
+        error: "Service is busy processing another request. Please try again later.",
+        status: "busy",
+      });
+    }
 
     // Determine if it's a client error or server error
     if (err.message.includes("Not logged in")) {
@@ -183,13 +204,13 @@ const server = app.listen(PORT, () => {
   console.log("=".repeat(60));
   console.log("  ChatGPT Image Service — Running");
   console.log("=".repeat(60));
-  console.log(`  URL:     http://localhost:${PORT}`);
-  console.log(`  Health:  http://localhost:${PORT}/health`);
-  console.log(`  Generate: POST http://localhost:${PORT}/generate`);
+  console.log(`  URL:        http://localhost:${PORT}`);
+  console.log(`  Health:     http://localhost:${PORT}/health`);
+  console.log(`  Generate:   POST http://localhost:${PORT}/generate`);
   console.log(`  Last image: GET http://localhost:${PORT}/lastimage`);
   console.log("=".repeat(60));
   console.log();
-  console.log("  Waiting for requests from n8n...");
+  console.log("  Waiting for requests from n8n (Single-request mode)...");
   console.log("  Press Ctrl+C to stop.");
   console.log();
 });
