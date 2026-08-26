@@ -34,7 +34,6 @@ n8n  →  POST /generate { prompt }  →  Playwright automates ChatGPT  →  PNG
 ### 1. Install dependencies
 
 ```bash
-cd "Browser Automation ChatGPT Image Service"
 npm install
 npx playwright install chrome
 ```
@@ -75,6 +74,7 @@ You'll see:
   ChatGPT Image Service — Running
 ============================================================
   URL:        http://localhost:3000
+  Docs:       http://localhost:3000/docs
   Health:     http://localhost:3000/health
   Generate:   POST http://localhost:3000/generate
   Last image: GET  http://localhost:3000/lastimage
@@ -87,7 +87,15 @@ The very first time you run `npm start` and send a request, a Chrome window will
 
 ---
 
-## API Reference
+## API Reference & Interactive Docs
+
+Interactive Swagger UI documentation is available at:
+👉 **`http://localhost:3000/docs`**
+
+Raw OpenAPI 3.0 specification:
+👉 **`http://localhost:3000/docs/openapi.json`**
+
+---
 
 ### `GET /health`
 
@@ -99,7 +107,7 @@ Returns service status.
   "status": "ok",
   "service": "chatgpt-image-service",
   "busy": false,
-  "timestamp": "2026-08-18T12:00:00.000Z"
+  "timestamp": "2026-08-26T12:00:00.000Z"
 }
 ```
 
@@ -176,25 +184,6 @@ Useful if you want to retrieve the last result without triggering a new generati
 
 The returned binary data flows directly into downstream n8n nodes (Write Binary File, Send Email, etc.)
 
-### Example n8n Workflow JSON (snippet)
-```json
-{
-  "name": "Generate Image",
-  "type": "n8n-nodes-base.httpRequest",
-  "parameters": {
-    "method": "POST",
-    "url": "http://localhost:3000/generate",
-    "sendBody": true,
-    "bodyParameters": {
-      "parameters": [
-        { "name": "prompt", "value": "={{ $json.prompt }}" }
-      ]
-    },
-    "options": { "response": { "response": { "responseFormat": "file" } } }
-  }
-}
-```
-
 ---
 
 ## Reliability Features
@@ -216,8 +205,9 @@ The returned binary data flows directly into downstream n8n nodes (Write Binary 
 ## Directory Structure
 
 ```
-Browser Automation ChatGPT Image Service/
+ChatGPT-Image-Genration-Browser-Automation/
 ├── server.js                   # Express HTTP server (entry point)
+├── openapi.js                  # OpenAPI 3.0 specification definition
 ├── package.json
 ├── .env.example                # Configuration template
 ├── .env                        # Your local config (not in git)
@@ -229,48 +219,3 @@ Browser Automation ChatGPT Image Service/
 │   └── chatgpt-automation/     # Dedicated Chrome session (login cookies saved here)
 └── downloads/                  # Permanent image archive (YYYY-MM-DD_HH-MM-SS.png)
 ```
-
----
-
-## Moving to Production (Oracle Linux)
-
-1. Install Node.js, Chrome, and Playwright on the server
-2. Copy the project files
-3. Run `npm install && npx playwright install chrome`
-4. Run `npm start` and log in manually via VNC/display on the first run
-5. Use **PM2** to keep the server running:
-   ```bash
-   npm install -g pm2
-   pm2 start server.js --name chatgpt-image-service
-   pm2 save
-   pm2 startup
-   ```
-6. Configure your firewall to allow n8n to reach port 3000
-
-> 💡 On Oracle Linux (headless server), set `HEADLESS=true` in `.env` and use **Xvfb** as a virtual display so Chrome can run without a monitor.
-
----
-
-## Troubleshooting
-
-**Browser doesn't open?**
-
-- Make sure Google Chrome is installed (not just Chromium)
-- Run `npx playwright install chrome`
-
-**"Not logged in" error?**
-
-- A Chrome window will open showing the ChatGPT login page. Log in manually — the session saves automatically and future runs will be fully automatic.
-
-**Image generation times out?**
-
-- ChatGPT may be busy. Increase `REQUEST_TIMEOUT_MS` in `.env` (try `240000` for 4 min)
-- The retry logic will automatically try again up to 3 times
-
-**"Create image" option not clicking?**
-
-- ChatGPT may have changed their UI. Check the terminal for warnings — the bot will still attempt to submit the prompt even if it can't find the option.
-
-**Free tier limit hit?**
-
-- Free users get 5 GPT-Image-2 images per day. The service will time out waiting for an image that never appears — check the browser window for a ChatGPT error message.

@@ -1,12 +1,14 @@
 ﻿/**
  * server.js
  *
- * Express HTTP server — the bridge between n8n and the ChatGPT browser bot.
+ * Express HTTP server - the bridge between n8n and the ChatGPT browser bot.
  *
  * Endpoints:
- *   GET  /health    → status check (is server alive? is it busy?)
- *   POST /generate  → accepts { prompt } → returns image/png binary
- *   GET  /lastimage → returns the most recently generated image
+ *   GET  /health      status check (is server alive? is it busy?)
+ *   POST /generate    accepts { prompt } -> returns image/png binary
+ *   GET  /lastimage   returns the most recently generated image
+ *   GET  /docs        Swagger UI interactive documentation
+ *   GET  /docs/openapi.json  raw OpenAPI specification
  *
  * Concurrency:
  *   Handles only 1 request at a time. If a request arrives while working,
@@ -26,6 +28,7 @@ const fs = require("fs");
 const { closeBrowser } = require("./scripts/sessionManager");
 const generateImage = require("./scripts/generateImage");
 const queue = require("./scripts/queue");
+const openApiSpec = require("./openapi");
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000");
@@ -41,6 +44,59 @@ app.use(express.json({ limit: "1mb" }));
 app.use((req, res, next) => {
   console.log(`[Server] ${new Date().toISOString()} ${req.method} ${req.path}`);
   next();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /docs & /docs/openapi.json (Swagger UI API Documentation)
+// ─────────────────────────────────────────────────────────────────────────────
+app.get("/docs/openapi.json", (req, res) => {
+  res.json(openApiSpec);
+});
+
+app.get("/docs", (req, res) => {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ChatGPT Image Service — API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <link rel="icon" type="image/png" href="https://unpkg.com/swagger-ui-dist@5/favicon-32x32.png" />
+  <style>
+    body {
+      margin: 0;
+      background: #fafafa;
+    }
+    .topbar {
+      display: none !important;
+    }
+    .swagger-ui .info {
+      margin: 25px 0 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = () => {
+      window.ui = SwaggerUIBundle({
+        url: '/docs/openapi.json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        layout: "BaseLayout"
+      });
+    };
+  </script>
+</body>
+</html>`;
+  res.setHeader("Content-Type", "text/html");
+  res.send(html);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,7 +249,7 @@ app.get("/lastimage", (req, res) => {
 app.use((req, res) => {
   res.status(404).json({
     error: "Route not found.",
-    availableRoutes: ["GET /health", "GET /lastimage", "POST /generate"],
+    availableRoutes: ["GET /health", "GET /docs", "GET /docs/openapi.json", "GET /lastimage", "POST /generate"],
   });
 });
 
@@ -205,6 +261,7 @@ const server = app.listen(PORT, () => {
   console.log("  ChatGPT Image Service — Running");
   console.log("=".repeat(60));
   console.log(`  URL:        http://localhost:${PORT}`);
+  console.log(`  Docs:       http://localhost:${PORT}/docs`);
   console.log(`  Health:     http://localhost:${PORT}/health`);
   console.log(`  Generate:   POST http://localhost:${PORT}/generate`);
   console.log(`  Last image: GET http://localhost:${PORT}/lastimage`);
